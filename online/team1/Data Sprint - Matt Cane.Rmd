@@ -1,0 +1,275 @@
+---
+title: "Hockey Analytics Data Sprint - Matt Cane"
+output: html_notebook
+---
+
+#Load Data and Required Packages
+##Load packages
+```{r}
+require(tidyverse)
+require(stringr)
+require(magrittr)
+require(mlr)
+require(png)
+require(grid)
+```
+##Load data
+Read CSV data in (CSV should be in a subfolder named data).
+```{r}
+data <- read_csv('Data\\final_data.csv')
+```
+
+
+Normalize on-ice data.
+```{r}
+data_onice <- data %>%
+  select(event_id, game_id, home_team, away_team, h_goalie_id, a_goalie_id, h1:a6) %>%
+  gather("team_skater_id","playerid", h1:a6) %>%
+  mutate(team = ifelse(substr(team_skater_id,1,1) == 'a',away_team,home_team),
+         position = case_when(
+           team == away_team & playerid == a_goalie_id ~ 'G',
+           team == home_team & playerid == h_goalie_id ~ 'G',
+           TRUE ~ 'S'
+         )) %>%
+  select(event_id, game_id, team, playerid, position)
+```
+
+Split coords
+```{r}
+data %>% 
+  separate(main_location, c('main_x','main_y'), sep = ',') %>%
+  separate(second_location, c('second_x','second_y'), sep = ',') %>%
+  mutate_at(vars(main_x:second_y), funs(as.integer(gsub('\\)','',gsub('\\(','',.))))) %>%
+  mutate(main_x_lh = -1 * abs(main_x),
+         second_x_lh = -1 * sign(main_x) * sign(second_x) * (second_x),
+         main_y_lh = -1 * sign(main_x) * main_y,
+         second_y_lh = -1 * sign(main_x) * sign(second_x) * second_y) -> data.clean
+```
+
+Load image as background
+```{r}
+img <- readPNG("rink_horizontal.PNG")
+img.vert <- readPNG('rink_vertical.PNG')
+bg <- rasterGrob(img, interpolate = TRUE)
+bg.vert <- rasterGrob(img.vert, interpolate = TRUE)
+```
+
+
+#What do zone exits look like? Where do they occur.
+First, let's breakdown where exits are mostly likely to occur on the ice.
+```{r} 
+data.clean %>% filter(type == 'zone_exit') %>%
+  ggplot(data = ., aes(x = main_y_lh)) + geom_density() + 
+  theme_classic() +
+  scale_y_continuous(expand = c(0,0)) +
+  scale_x_reverse() + 
+  facet_grid(~ sub_type) + 
+  xlab('Y')
+
+```
+Unsurpsingly, chip exits are most likely to occur at the boards. Controlled exits (pass & skate) occure more evenly across the ice than failed exits, which rarely occur in the center of the ice. 
+
+We can group these further by looking at where controlled exits tend to originate from on the ice (excluding chips).
+```{r}
+data.clean %>% filter(type == 'zone_exit') %>%
+  mutate(controlled = case_when(
+    sub_type %in% c('pass','skate') ~ 'Controlled',
+    TRUE ~ 'Uncontrolled'
+  )) %>%
+  ggplot(data = ., aes(x = main_y_lh)) + geom_density() + 
+  theme_classic() +
+  scale_y_continuous(expand = c(0,0)) +
+  facet_grid(~ controlled) +
+   xlab('Y')
+```
+Again, we see that controlled exits are most likely to occur towards the middle while uncontrolled exit attempts occur closer to the boards. Interestingly, as you move slightly away from the boards, the number of controlled exits seems to increase, indicating that perhaps a little bit of separation from the boards can increase the likelihood of success. To test this, we can look at estimating the success rates by where the exit originates from (again, ignoring chip plays).
+```{r}
+data.clean %>% filter(type == 'zone_exit') %>%
+  #filter(sub_type != 'chip') %>%
+  mutate(controlled = case_when(
+    sub_type %in% c('pass','skate') ~ 'Controlled',
+    TRUE ~ 'Uncontrolled'
+  )) %>%
+  group_by(main_y_lh) %>%
+  summarise(pct = sum((controlled == 'Controlled')*1)/n()) %>%
+  ggplot(data = ., aes(x = main_y_lh, y = pct)) + geom_line() + 
+  theme_classic() +
+  scale_y_continuous(expand = c(0,0), limits = c(0,1), label = scales::percent) + 
+  xlab('Y')
+```
+This chart shows two things:
+1) Most exits are in fact successful
+2) Moving away from the boards even slightly greatly increases the likelihood of a controlled exit.
+
+
+#Clustering Entries and Exits
+Let's look at how  k-means clustering to create 6 different exit pass types using their start and end location.
+```{r}
+exit.pass.task <- makeClusterTask(id = 'exit.pass.task',
+                                  pass.exit %>%
+                                    select(main_x_lh, second_x_lh, main_y_lh, second_y_lh))
+
+lrn <- makeLearner('cluster.kmeans', centers = 6)
+
+exit.pass.model <- train(lrn, exit.pass.task)
+
+pass.exit$predict.class <- getPredictionResponse(predict(exit.pass.model, newdata = pass.exit %>% select(main_x_lh, second_x_lh, main_y_lh, second_y_lh)))
+```
+
+With 6 clusters, we can look at where the passes start and end.
+```{r}
+bind_rows(
+  pass.exit %>%
+    select(event_id, game_id, main_x_lh, main_y_lh, predict.class) %>%
+    rename(x = main_x_lh, y = main_y_lh) %>%
+    mutate(pt = 'start'),
+  pass.exit %>%
+    select(event_id, game_id, second_x_lh, second_y_lh, predict.class) %>%
+    rename(x = second_x_lh, y = second_y_lh) %>%
+    mutate(pt = 'end')
+) %>% 
+  mutate(id = paste0(game_id,'.',event_id)) %>%
+  group_by(predict.class) %>%
+  arrange(id) %>%
+  mutate(predict.row = row_number()) %>%
+  filter(predict.row <= 30) %>%
+  ggplot(data = ., aes(x = x, y = y, group = id)) + geom_line() + geom_point(aes(shape = pt, color = pt)) + 
+  facet_grid(~ predict.class) + theme_classic()
+    
+```
+
+How do we know how many clusters are best? We can try many different values for k, and then chose the best based on the split half reliability of each team's % of passes in a given cluster
+```{r}
+results <- data.frame(k = integer(), mean.corr = double())
+for(i in seq(3,12)){
+  lrn <- makeLearner('cluster.kmeans', centers = i)
+
+  exit.pass.model <- train(lrn, exit.pass.task)
+  
+  pass.exit$predict.class <- getPredictionResponse(predict(exit.pass.model, newdata = pass.exit %>% select(main_x_lh, second_x_lh, main_y_lh, second_y_lh)))
+  
+  pass.exit %>%
+  mutate(event_odd = paste0('Odd.', event_id %% 2)) %>%
+  filter(game_state == '5v5') %>%
+  group_by(team_id, predict.class, event_odd) %>%
+  summarise(n = n()) %>%
+  group_by(team_id, event_odd) %>%
+  mutate(pct = n/sum(n)) %>% 
+  select(-n) %>%
+  spread(event_odd, pct) %>%
+  group_by(predict.class) %>%
+  summarise(correl = cor(Odd.0, Odd.1)) %>%
+  ungroup %>%
+  summarise(mean.correl = mean(correl)) %>% pull(mean.correl) -> mean.corr
+
+    results <- bind_rows(results, data.frame(k = i, mean.corr = mean.corr))   
+}
+
+
+results
+```
+Using 7 clusters produces the best average split-half reliability amongst the different cluster pass types. What do the 7 clusters look like?
+```{r}
+lrn <- makeLearner('cluster.kmeans', centers = 7)
+
+exit.pass.model.final <- train(lrn, exit.pass.task)
+
+pass.exit$predict.class.final <- getPredictionResponse(predict(exit.pass.model.final, 
+                                                               newdata = pass.exit %>% 
+                                                                 select(main_x_lh, second_x_lh, main_y_lh, second_y_lh)))
+
+bind_rows(
+  pass.exit %>%
+    select(event_id, game_id, main_x_lh, main_y_lh, predict.class.final) %>%
+    rename(x = main_x_lh, y = main_y_lh) %>%
+    mutate(pt = 'start'),
+  pass.exit %>%
+    select(event_id, game_id, second_x_lh, second_y_lh, predict.class.final) %>%
+    rename(x = second_x_lh, y = second_y_lh) %>%
+    mutate(pt = 'end')
+) %>% 
+  mutate(id = paste0(game_id,'.',event_id)) %>%
+  group_by(predict.class.final) %>%
+  arrange(id) %>%
+  mutate(predict.row = row_number()) %>%
+  filter(predict.row <= 30) %>%
+  ggplot(data = ., aes(x = x, y = y, group = id)) + geom_line() + geom_point(aes(shape = pt, color = pt)) + 
+  facet_grid(~ predict.class.final) + theme_classic()
+```
+There are passes that stay in a lane (1, 2 and 4 in the R, C and L lanes respectively), passes that cross the entire ice (5 and 7), 
+and passes that seem to use half the ice (3 and 6). Interestingly, while there's an independent cluster for passes from the center of the ice to the left side of the ice, they're no cluster for passes from the centre of the ice ot the right side.
+
+What type of passes do teams rely on? Let's first rename the class types based on the graphic above and the lanes they start/end in.
+```{r}
+pass.exit %>%
+  mutate(start_lane = case_when(
+    predict.class.final == 1 ~ 'R',
+    predict.class.final == 2 ~ 'C',
+    predict.class.final == 3 ~ 'C',
+    predict.class.final == 4 ~ 'L',
+    predict.class.final == 5 ~ 'R',
+    predict.class.final == 6 ~ 'L',
+    predict.class.final == 7 ~ 'L'
+  ),
+  end_lane = case_when(
+    predict.class.final == 1 ~ 'R',
+    predict.class.final == 2 ~ 'C',
+    predict.class.final == 3 ~ 'L',
+    predict.class.final == 4 ~ 'L',
+    predict.class.final == 5 ~ 'C',
+    predict.class.final == 6 ~ 'C',
+    predict.class.final == 7 ~ 'R'
+  ), 
+  pass_class = paste0(start_lane, '-', end_lane)) %>%
+  group_by(team_id, pass_class) %>%
+  filter(game_state == '5v5') %>%
+  summarise(n = n()) %>%
+  mutate(pct = n/sum(n)) %>%
+  select(-n) %>%
+  spread(pass_class, pct) %>%
+  mutate_at(vars(1:7), funs(round(. * 100, 1)))
+
+```
+
+We can also break down where the players who drive most of the exits attempt their exits from. The plot below shows the frequency of exits for Team #3 broken down by type and player, and plots out where they occur on the rink.
+
+```{r}
+data.clean %>%  
+    filter(team_id == 3 & type == 'zone_exit' & game_state == '5v5') %>%
+    mutate(Type.Group = case_when(         sub_type == 'pass' ~ 'Pass',
+                                           sub_type == 'skate' ~ 'Skate',
+                                           sub_type == 'chip' ~ 'Chip',
+                                           TRUE ~ 'Uncontrolled')) %>%
+    group_by(Type.Group) %>%
+    mutate(n.type = n()) %>%
+    ungroup %>%
+    mutate(pct.class = round(100*n.type/n(),1),
+           lbl.row = paste0(Type.Group, '\n',pct.class,'%')) %>%
+    group_by(main_player_id) %>%
+    mutate(n.player = n()) %>%
+    ungroup %>%
+    mutate(pct.player = round(100*n.player/n(),1),
+           lbl.col = paste0('Player ',main_player_id, '\n',pct.player,'%')) %>%
+    filter(pct.player > 5) %>%
+    arrange(-pct.player) %>%
+    mutate(main_y_lh = main_y_lh * 42.5/92) %>% 
+    ggplot(data = ., aes(y = main_x_lh, x = main_y_lh)) + 
+    coord_fixed() +
+    scale_x_continuous(limits = c(-43,43), expand = c(0,0)) + 
+    scale_y_continuous(limits = c(-100,0), expand = c(0,0)) + 
+    theme_classic() + 
+    annotation_custom(bg.vert, ymin = -100.5, ymax = 100.5, xmin = -43, xmax = 43) +
+    theme(panel.background = element_blank(),
+          panel.grid.minor = element_blank(),
+          legend.title = element_blank(),
+          axis.text = element_blank(),
+          axis.title = element_blank(),
+          axis.ticks = element_blank(),
+          axis.line = element_blank(),
+          legend.position = "none"
+    ) + geom_density_2d(aes(color = Type.Group)) + 
+    facet_grid(lbl.row ~ lbl.col) + geom_point(aes(y = main_x_lh, x = ifelse(Type.Group == 'Skate', main_y_lh, NA)))
+
+```
+
+
