@@ -1,0 +1,16 @@
+I thought the distance of each pass was the highlight of this dataset, so I
+compared the length of passes (on the x axis) vs. the power play minutes
+per game (on the y axis). The size of the bubble indicates how many passes
+per game the player made, exact numbers can be found using the tool tip.
+
+The two charts, one for passes made by the player, and the other for passes
+received by the player, show that the better offensive players (those getting
+more PP time) give and receive more passes, and make and receive longer passes.
+The charts also show that the number of passes corrolate to the length of
+the average pass.
+
+index.html 
+data folder
+	data/data4.json
+lib folder
+	lib/d3-354.min.js

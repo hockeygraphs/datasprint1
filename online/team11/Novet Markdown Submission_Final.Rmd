@@ -1,0 +1,269 @@
+---
+title: "Zone Exit Value Above Expected"
+author: "Alex Novet"
+date: "November 4, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+setwd("C:/Users/alex.novet/Dropbox/Team 11")
+dat1 <- read.csv("final_data2.csv")
+#In Excel, I split out the location x and y values, but the file is otherwise the same.
+```
+
+For this data sprint, I intend to focus my efforts on zone exits. What makes a good or bad zone exit? What should our expectations be given the circumstances? Which teams and players are the best at zone exits?
+
+##Part 1: Data Exploration and Zone Exit Success
+
+I think zone exits should be evaluated based on what happens later in the play. Traditionally, zone exits are considered a "success" if the puck leaves the defensive zone. However, there's little value in a zone exit that just tosses the puck back to the opponent in the neutral zone. Rather, a truly successful zone exit gives its team the next zone entry. So, I want to look at every zone exit and define success based on who gets the next zone entry.
+
+```{r define exit success}
+#Find the transition event after each zone exit (imperfect, but acceptable for now)
+exit_entry <- filter(dat1, game_state == "5v5", 
+                     type %in% c("zone_exit", "zone_entry"), 
+                     !sub_type %in% c("failed", "icing", "dump_change")) %>%
+  group_by(game_id, period) %>%
+  mutate(next_transition_team = lead(team_id))
+
+#Define success for each exit based on the next transition play
+exits1 <- exit_entry %>%
+  filter(type == "zone_exit") %>%
+  mutate(successful_exit = team_id == next_transition_team)
+
+#Now merge this information back into the original data file, and make it 5v5
+dat2 <- dat1 %>%
+  filter(game_state == "5v5") %>%
+  left_join(exits1)
+```
+With success defined, we can do a quick check of success by exit type. I did this at RITHAC this year for the NHL, but it's good to check again with this data
+```{r check exit success by type}
+exits2 <- dat2 %>%
+  filter(type == "zone_exit") %>% #Remove the ones at the end of the period with no subsequent event
+  mutate(successful_exit = ifelse(sub_type %in% c("failed", "icing", "dump_change"), FALSE, successful_exit)) %>%
+  filter(!is.na(successful_exit))
+
+exit_success_QC <- group_by(exits2, sub_type) %>% 
+  summarise(n = n(), successes = sum(successful_exit)) %>% 
+  mutate(rate = successes/n)
+
+exit_success_QC
+```
+Unsurprisingly, success by type mirrors the NHL: passing and skating are almost equivalently successful, while dumping the puck out is far less successful. It seems all types have higher success rates than in the NHL (looser defensive structures?), but that could easily be a data collection difference between Corey and this dataset. 
+
+Now that we have success defined, we can see how location in the zone affects the success rate. This is the first time such data has been available publicly, so it will be very interesting to see how the location of the puck at the time the zone exit starts affects the success (and the type of attempt used).
+
+Methodology notes: I'm taking the negative absolute value of the x-value so that exits from either end of the ice are counted equivalently and the plot has the net on the far left. I'm also cutting the values off and removing anything with x < 25, as that's my best evaluation for where the blue line is.
+
+```{r check exit success by location}
+exit_success <- exits2 %>%
+  mutate(main_x = -abs(main_x)) %>%
+  group_by(main_x, main_y) %>%
+  summarise(n = n(), successes = sum(successful_exit)) %>% 
+  mutate(success_rate = successes/n) %>%
+  filter(main_x < -25,
+         main_x > -92 | abs(main_y) < 92,
+         n > 10) #Removing neutral zone, non-existant corners, and inside the net
+
+#Plot this data
+ggplot(exit_success, aes(x = main_x, y = main_y)) + 
+  geom_tile(aes(fill = success_rate)) + 
+  scale_fill_gradient(low = "red", high = "steelblue") +
+  xlab("Distance from Center Ice (-89 = goal line)") +
+  ylab("") +
+  ggtitle("Zone Exit Success Rate") +
+  geom_vline(xintercept=-89) #Add goal line
+```
+
+
+From this, we can see that exits that start closer to the neutral zone are more likely to succeed, as are exits closer to the center of the ice. Exits starting at the boards, especially in the corners, have a lower success rate.
+
+We can also see the frequency of zone exits by location:
+```{r zone exit frequency}
+ggplot(exit_success, aes(x = main_x, y = main_y)) + 
+  geom_tile(aes(fill = n)) + 
+  scale_fill_gradient(high = "red", low = "steelblue") +
+  xlab("Distance from Center Ice (-89 = goal line)") +
+  ylab("") +
+  ggtitle("Zone Exit Frequency by Location") +
+  geom_vline(xintercept=-89) #Add goal line
+
+```
+
+
+Interestingly, we can see that most zone exits begin far from the goal, particularly near the boards.
+
+For the last step in this section, let's see how success as frequency vary by type of zone exit. This will help us distinguish how much the location's impact acts directly on success vs. indirectly through the type of zone exit.
+
+```{r zone exits by type}
+exit_success_type <- exits2 %>%
+  mutate(main_x = -abs(main_x)) %>%
+  group_by(main_x, main_y, sub_type) %>%
+  summarise(n = n(), successes = sum(successful_exit)) %>% 
+  mutate(success_rate = successes/n) %>%
+  filter(main_x < -25,
+         main_x > -92 | abs(main_y) < 92,
+         n > 5) #Removing neutral zone, non-existant corners, and inside the rare events
+
+#Plot this data
+ggplot(filter(exit_success_type, !sub_type %in% c("failed", "icing")), aes(x = main_x, y = main_y)) + 
+  geom_tile(aes(fill = success_rate)) + 
+  scale_fill_gradient(low = "red", high = "steelblue") +
+  xlab("Distance from Center Ice (-89 = goal line)") +
+  ylab("") +
+  ggtitle("Zone Exit Success Rate") +
+  geom_vline(xintercept=-89) +
+  facet_grid(~sub_type)
+
+ggplot(exit_success_type, aes(x = main_x, y = main_y)) + 
+  geom_tile(aes(fill = n)) + 
+  scale_fill_gradient(high = "red", low = "steelblue") +
+  xlab("Distance from Center Ice (-89 = goal line)") +
+  ylab("") +
+  ggtitle("Zone Exit Frequency by Location") +
+  geom_vline(xintercept=-89) + #Add goal line
+  facet_grid(~sub_type)
+
+```
+
+
+
+This suggests that players are far more comfortable skatng the puck out of the zone when they are close to the blue line. On the other hand, they are far more likely to chip the puck out or pass if they are along the boards. I suspect that additional research would show that the "skate" exits involve additional passes deeper in the defensive zone before actually skating it out. This is worth more attention than I can give it now. Suffice to say that players barely ever skate the puck out from deep in their own zone without passing it to a teammate. 
+
+In addition, success rate seems heavily driven by the type of exit rathetr than the location. Keeping possession ensures success, location matters only in leading to more exit possessions.
+
+##Part 2: An Expected Zone Exit Model
+
+Now that we know what happens throughout the dataset, we can begin to understand the various inputs that go into zone exit success in a more systematic way. In this section, I will build a simple model to predict whether a zone will be successful based on the information we have at the time it occurs. This model will be agnostic to the team and player so that we can then compare its predictions to the results generated by players and teams. It's not ideal to do this in-sample, but it's acceptable now as a data spring proof of concept that could be expanded in a larger data environment. (Ideally, this environment would also include additional datapoints like the proximity of opponents)
+
+To start, we'll extract additional information about each zone exit based on the preceding events. Ideally, that would be a complete list of all of the passes, turnovers, shots, and other events events leading to the exit attempt. For now, I'll focus just on the single prior event. I'm also going to limit to 5v5 for simplicity.
+
+```{r exit cleaning, echo = FALSE}
+
+#Add additional variables
+dat3 <- dat2 %>%
+  group_by(game_id, period) %>%
+  mutate(last_team = lag(team_id),
+         same_team = team_id == last_team,
+         last_type = lag(type), last_sub_type = lag(sub_type),
+         last_main_x = lag(main_x), last_main_y = lag(main_y),
+         last_second_x = lag(second_x), last_second_y = lag(second_y)) %>%
+  ungroup()
+
+#Restrict to zone exits and define success
+model_exits1 <- dat3 %>%
+  filter(type == "zone_exit") %>%
+  mutate(successful_exit = ifelse(sub_type %in% c("failed", "icing", "dump_change"), FALSE, successful_exit)) %>%
+  filter(!is.na(successful_exit)) %>% 
+  mutate(last_second_x = ifelse(is.na(last_second_x), -9999, last_second_x),
+         last_second_y = ifelse(is.na(last_second_y), -9999, last_second_y)) %>%
+  filter(!is.na(same_team))
+
+spec = c(train = .6, test = .2, validate = .2)
+g = sample(cut(seq(nrow(model_exits1)), 
+               nrow(model_exits1)*cumsum(c(0,spec)),
+               labels = names(spec)
+))
+model_exits1 <- cbind(model_exits1, g)
+
+#Reduce to variables used in model
+model_exits2 <- select(model_exits1, g, period, main_x, main_y, same_team, last_type, last_sub_type, last_main_x, last_main_y, last_second_x, last_second_y, successful_exit)
+
+train <- filter(model_exits2, g == "train") %>% select(-g)
+test <- filter(model_exits2, g == "test") %>% select(-g)
+val <- filter(model_exits2, g == "validate") %>% select(-g)
+```
+
+We now have a dataset we can use to model success. The key variables are the period, location where the zone exit starts, which team had the last event and what type it was, and where the last event happened. In addition, I've split the dataset into training, testing, and validation on a 60/20/20 split.
+
+I'm going to model this data with a random forest. With more time, there's plenty of extra complexity that could be added, but this is a good balance of accuracy and speed for now. A logistic regression would be valuable for its interpretability, but I suspect there will be non-linear relationships in the location data that I don't have the time to address.
+
+```{r random forest}
+require(randomForest)
+require(modelr)
+set.seed(1366)
+
+#fit <- randomForest(successful_exit ~ ., data=train, importance=TRUE, ntree=500, do.trace = 50)
+#save(fit, file = "Initial Training Model.Rda")
+load("Initial Training Model.Rda")
+
+val2 <- add_predictions(val, model = fit) %>%
+  mutate(Class = pred > .5)
+
+mse <- mean((val2$pred - val2$successful_exit)^2)
+table(val2$successful_exit, val2$Class)
+#Accuracy of 69% is nice, but not better than that. MSE of .2
+
+```
+In the out-of-sample set, this model had an accuracy of 69% (I know) and RME of 0.2. Those aren't fantastic, but I feel okay about them considering that we only have the location and the one previous event. A lot more goes into a successful zone exit, so the model has plenty of other inputs that could be added later to improve it. Let's accept the model for now and see if it provides any interesting results when we apply it fully and see how individuals did in comparison.
+
+#Part 3: Evaluating Teams and Players on Zone Exit Value
+
+```{r full model}
+#fit2 <- randomForest(successful_exit ~ ., data=model_exits2, importance=TRUE, ntree=500, do.trace = 50)
+#save(fit2, file = "Final Data Spring xExit Model.Rda")
+load("Final Data Spring xExit Model.Rda")
+me3 <- add_predictions(model_exits1, model = fit2, var = "xExit") %>%
+  mutate(added_value = successful_exit - xExit)
+```
+We now have the xExit values from the model as the expected probability of a successful exit. We can compare actual values to this to see how much additional value over expected was created by the people involved. For example, we can evaluate this on a team level to see which teams are doing better at zone exits than we would expect with the available data. We'll do this as an overall value added stat, a per game stat (to correct for teams having a different # of games played in the tracked sample), and a per exit stat (to correct for frequency of exits).
+
+```{r team exit value added}
+team_value_for <- me3 %>%
+  group_by(team_id) %>%
+  summarise(exit_attempts = n(),
+            exit_value_added = sum(added_value),
+            gp = n_distinct(game_id)) %>%
+  mutate(extra_value_pergame = exit_value_added / gp,
+         extra_value_perexit = exit_value_added / exit_attempts,
+         team_id = as.factor(team_id))
+ggplot(team_value_for, aes(x = reorder(team_id, -extra_value_pergame), y = extra_value_pergame)) + geom_col() +
+  labs(x = "Team ID", y = "Exit Value Added Per Game",
+       title = "Exit Value Above Expected Per Game")
+
+
+```
+
+I'd be very curious to see how these number line up against qualitiative evaluation of these teams' ability to exit the neutral zone. My hope is that this accurately reflects a measure of how well each team transitions play across the rink. One limitation is that some teams may do better here because they succeed despite putting themselves in bad exit positions (or vice versa), but that would require additional research and knowledge to incorporate.
+
+We can also conduct this analysis on each team's opponents to see the defensive equivalent: essentially, which teams make their opponents do worse at zone exits than expected.
+
+```{r team exit value added against}
+team_value_against <- me3 %>%
+  mutate(opp = ifelse(team_id == home_team, away_team, home_team)) %>%
+  group_by(opp) %>%
+  summarise(exit_attempts = n(),
+            exit_value_added = sum(added_value),
+            gp = n_distinct(game_id)) %>%
+  mutate(extra_value_pergame = exit_value_added / gp,
+         extra_value_perexit = exit_value_added / exit_attempts,
+         opp = as.factor(opp))
+ggplot(team_value_against, aes(x = reorder(opp, -extra_value_pergame), y = extra_value_pergame)) + geom_col() +
+  labs(x = "Team ID", y = "Opponent Exit Value Added Per Game",
+       title = "Opponent Exit Value Above Expected Per Game",
+       subtitle = "Low value means the identified team prevented their opponent's zone exits")
+
+
+```
+
+
+
+Based on this, I would predice that teams 1, 7, and 13 are some of the stronger teams in the AHL, at least when it comes to transitional play. Team 9 bogs things down and has fewer zone exits in both directions. Team 11 allows a lot and generates transitions at a below average rate.
+
+Similarly, we can repeat this process for each player. For now, we'll focus only on the exits where the player in question is responsible for the exit. In the future, it would be interesting to see the results for any exit in which that player is on-ice, as it's possible their pass reception, positioning or another factor could help the team exit even without their direct involvement in the defensive zone. We could also find the off-ice version to calculate Rel stats. But for now, we'll accept this version and pause to see how well it is doing.
+
+```{r player stats}
+player_value_for <- me3 %>%
+  group_by(team_id, main_player_id) %>%
+  summarise(exit_attempts = n(),
+            exit_value_added = sum(added_value),
+            gp = n_distinct(game_id)) %>%
+  mutate(extra_value_pergame = exit_value_added / gp,
+         extra_value_perexit = exit_value_added / exit_attempts) %>%
+  arrange(desc(extra_value_pergame)) 
+head(player_value_for) #Best players
+tail(player_value_for) #Worst players
+
+
+```

@@ -1,0 +1,282 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+<head>
+	<title>rakish data sprint</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<style>
+		.bigbox{width: 1440px; height: 500px; border: 1px solid #000;   -moz-border-radius: 10px; -webkit-border-radius: 10px; -khtml-border-radius: 10px; border-radius: 10px; }
+		#content1 {width: 1400px; background-color: #fff}
+		#contentspacer {height: 100px }
+		#content2 {width: 1400px; background-color: #fff}
+		.axis path { stroke: #000000; stroke-width: 2px; opacity:.5; shape-rendering: crispEdges;fill: none;	}
+		.axis line { stroke: #000000; stroke-width: 2px; opacity:.5; shape-rendering: crispEdges;fill: none;	}
+		.axis text {font-family: sans-serif;font-size: 11px; }
+		#butplayerrow {width: 840px; height: 35px; background-color: #ddd; overflow: auto; }
+		.playerbuttonson {float: left; margin-left: 6px; height: 30px; width: 30px; border: 2px solid #000; background-color: yellow;  -moz-border-radius: 10px; -webkit-border-radius: 10px; -khtml-border-radius: 10px; border-radius: 10px; }
+		.playerbuttonsoff {float: left; margin-left: 6px; height: 30px; width: 30px; border: 2px solid #000; background-color: #999;  -moz-border-radius: 10px; -webkit-border-radius: 10px; -khtml-border-radius: 10px; border-radius: 10px; }
+		.playertitles {margin-left: 4px; font-size: 8px; }
+		#butyearrow {width: 840px; height: 35px; background-color: #ddd; overflow: auto; }
+		.yearbuttonson {float: left; margin-left: 6px; height: 30px; width: 50px; border: 2px solid #000; background-color: yellow;  -moz-border-radius: 10px; -webkit-border-radius: 10px; -khtml-border-radius: 10px; border-radius: 10px; }
+		.yearbuttonsoff {float: left; margin-left: 6px; height: 30px; width: 50px; border: 2px solid #000; background-color: #999;  -moz-border-radius: 10px; -webkit-border-radius: 10px; -khtml-border-radius: 10px; border-radius: 10px; }
+		.yeartitles {margin-left: 4px; font-size: 8px; }
+	</style>
+
+<script type="text/javascript" src="lib/d3-354.min.js"  ></script>
+
+	
+	
+
+<script type='text/javascript' >
+
+var sss = {
+	data: {},
+	minx : 0,
+	maxx : 0,
+	miny : 0,
+	maxy : 0,
+	numberofteams : 13,
+	
+
+
+
+main: function() {
+		
+		
+		sss.loop()
+		sss.drawpage()
+	},
+
+
+loop: function() {
+	sss.minx = 1000
+	sss.maxx = 0 
+	sss.miny = 1000
+	sss.maxy = 0
+	sss.minx2 = 1000
+	sss.maxx2 = 0 
+	sss.miny2 = 1000
+	sss.maxy2 = 0
+	
+//	fromtotaldistance = 0
+//	fromtotalcount = 0
+	for (t=0; t<=sss.numberofteams; t++) {
+		for (p=0; p<sss.data[t].length; p++) {	
+			if (sss.data[t][p]['5x5numberfrom'] > 0) {
+				test = sss.data[t][p]['5x5totaldistancefrom'] / sss.data[t][p]['5x5numberfrom']
+				 	if (test > sss.maxx) sss.maxx = test
+					if (test < sss.minx) sss.minx = test
+				}
+				else sss.minx = 0
+
+//				fromtotaldistance = fromtotaldistance + sss.data[t][p]['5x5totaldistancefrom']
+//				fromtotalcount = fromtotalcount + sss.data[t][p]['5x5numberfrom']
+				testy = (sss.data[t][p].ppseconds / sss.data[t][p].gamesplayed / 60) 
+					if (testy > sss.maxy) sss.maxy = testy
+					if (testy < sss.miny) sss.miny = testy
+			
+			
+	}
+	}
+//	tototaldistance = 0
+//	tototalcount = 0
+		
+	for (t=0; t<=sss.numberofteams; t++) {
+		for (p=0; p<sss.data[t].length; p++) {	
+			if (sss.data[t][p]['5x5numberto'] > 0) {
+				test = sss.data[t][p]['5x5totaldistanceto'] / sss.data[t][p]['5x5numberto']
+				 	if (test > sss.maxx2) sss.maxx2 = test
+					if (test < sss.minx2) sss.minx2 = test
+				}
+				else sss.minx = 0
+
+	//			tototaldistance = tototaldistance + sss.data[t][p]['5x5totaldistancefrom']
+	//			tototalcount = tototalcount + sss.data[t][p]['5x5numberfrom']
+				testy = (sss.data[t][p].ppseconds / sss.data[t][p].gamesplayed / 60) 
+					if (testy > sss.maxy2) sss.maxy2 = testy
+					if (testy < sss.miny2) sss.miny2 = testy
+			
+			
+	}
+	}		
+
+	},
+
+drawpage: function() {
+
+	sss.width = 1400
+	sss.height = 500
+	sss.margin = 20
+	
+	
+
+	y = d3.scale.linear() 
+		.domain([ sss.maxy , sss.miny ])
+		.range([0 + (sss.margin * 1.5), sss.height - sss.margin]),
+
+	x = d3.scale.linear()
+		.domain([ sss.minx2 , sss.maxx2 ])
+		.range([0 + sss.margin   , sss.width - (sss.margin * 2) ])
+
+	var svg = d3.select("#content1").append("svg")
+	                            .attr("width", sss.width )
+	                            .attr("height", sss.height);
+
+	for (t=0; t<=sss.numberofteams; t++) {
+		for (p=0; p<sss.data[t].length; p++) {	
+			circley = (sss.data[t][p].ppseconds / sss.data[t][p].gamesplayed / 60) 
+			if (sss.data[t][p]['5x5numberfrom'] > 0) circlex = sss.data[t][p]['5x5totaldistancefrom'] / sss.data[t][p]['5x5numberfrom']
+				else circlex = 0
+			radius = (sss.data[t][p]['5x5numberfrom'] / sss.data[t][p]['gamesplayed']) * .5
+			if (radius < 3) radius = 3
+			if (radius > 20) radius = 20
+			drawcircle(svg,x(circlex),y(circley),radius,'#0f0',t,sss.data[t][p]["player"],sss.data[t][p]['5x5numberfrom'] / sss.data[t][p]['gamesplayed'],'Number of Passes From/Game',circley)
+	
+		}	// p
+	}	// t
+	drawxaxis(svg,x) 
+	drawyaxis(svg,y)
+	drawsingletext(svg,100,100,"5x5 Passes From",'#000',20,0)
+	drawsingletext(svg,-400,18,"<- PP Minutes per Game ->",'#000',20,-90)
+	drawsingletext(svg,1100,470,"<- Average Distance of Pass ->",'#000',20,0)
+
+	y2 = d3.scale.linear() 
+		.domain([ sss.maxy2 , sss.miny2 ])
+		.range([0 + (sss.margin * 1.5), sss.height - sss.margin]),
+
+	x2 = d3.scale.linear()
+		.domain([ sss.minx2 , sss.maxx2 ])
+		.range([0 + sss.margin   , sss.width - (sss.margin * 2) ])
+
+	var svg2 = d3.select("#content2").append("svg")
+	                            .attr("width", sss.width )
+	                            .attr("height", sss.height);
+
+	for (t=0; t<=sss.numberofteams; t++) {
+		for (p=0; p<sss.data[t].length; p++) {	
+			circley = (sss.data[t][p].ppseconds / sss.data[t][p].gamesplayed / 60) 
+			if (sss.data[t][p]['5x5numberto'] > 0) circlex = sss.data[t][p]['5x5totaldistanceto'] / sss.data[t][p]['5x5numberto']
+				else circlex = 0
+			radius = (sss.data[t][p]['5x5numberto'] / sss.data[t][p]['gamesplayed']) * .5
+			if (radius < 3) radius = 3
+			if (radius > 20) radius = 20
+			drawcircle(svg2,x2(circlex),y2(circley),radius,'#0f0',t,sss.data[t][p]["player"],sss.data[t][p]['5x5numberto'] / sss.data[t][p]['gamesplayed'],'Number of Passes To/Game',circley)
+	
+		}	// p
+	}	// t
+	drawxaxis(svg2,x) 
+	drawyaxis(svg2,y)
+	drawsingletext(svg2,100,100,"5x5 Passes To",'#000',20,0)
+	drawsingletext(svg2,-400,18,"<- PP Minutes per Game ->",'#000',20,-90)
+	drawsingletext(svg2,1100,470,"<- Average Distance of Pass ->",'#000',20,0)
+
+
+
+	
+
+function drawsingletext(visual,xpos,ypos,text,color,fontsize,rotate) {
+
+
+	var singletext = visual.append("text")
+		 .attr("x", xpos )
+		 .attr("y", ypos ) 
+		.text(text) 
+		.style("fill",color)
+		.style("font-size",fontsize + 'px')
+		.style("text-anchor","start")
+		.attr("transform", "rotate(" + rotate + ")");
+}
+
+
+
+function drawcircle(visual,cx,cy,radius,color,team,player,passespergame,legend,ppmg) {
+
+
+		
+			var onecircle = visual.append("circle")
+				.attr("cx", cx)
+				.attr("cy", cy)
+				.attr("r", radius )
+				.style("stroke",color)
+				.style("stroke-width","1px")
+				.style("fill","white")
+				.append("svg:title")
+				.text('player ' + player + '\n' 
+					+ 'team ' + team + '\n' 
+					+ legend + ' ' + passespergame.toFixed(2) + '\n'
+					+ 'PP Minutes per Game ' + ppmg.toFixed(2) )
+}
+
+function drawxaxis(visual,x) {
+		
+		var xAxis = d3.svg.axis()
+				 .scale(x)
+				 .orient("bottom")
+				.ticks(5)
+   							
+		visual.append("g")
+				.attr("class", "axis")
+				.attr("transform", "translate(" + (sss.margin)  + "," + (sss.height - ( sss.margin)) + ")")
+				.call(xAxis);
+}
+
+function drawyaxis(visual,y) {
+		
+		var yAxis = d3.svg.axis()
+                  .scale(y)
+                  .orient("left")
+                  .ticks(5);
+   							
+		visual.append("g")
+				.attr("class", "axis")
+				.attr("transform", "translate("+ (sss.margin*2)  + ",0)")
+				.call(yAxis);
+}
+
+
+
+
+},		// drawpage
+
+
+
+
+
+
+
+
+
+loaddata: function() {
+			
+			d3.json('data/data4.json', function(temp3) {
+				sss.data = temp3
+				sss.main()
+				})
+			}
+}			// sss
+
+	</script>  
+
+</head>
+<body>
+
+
+<div class="bigbox">
+<div id="content1"></div>
+</div>
+<div id="contentspacer"></div>
+<div class="bigbox">	
+<div id="content2"></div>
+</div>
+
+
+
+<script type="text/javascript">
+
+   sss.loaddata()
+
+
+</script>
+
+</body>
+
+</html>
