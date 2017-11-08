@@ -1,0 +1,64 @@
+
+// Fonts
+@import url("https://fonts.googleapis.com/css?family=Raleway:300,400,600");
+@import url('https://fonts.googleapis.com/css?family=Karla');
+
+// Variables
+@import "variables";
+
+// Bootstrap
+@import "~bootstrap-sass/assets/stylesheets/bootstrap";
+
+body {
+    font-family: 'Karla', sans-serif;
+}
+
+.bar {
+    &:first-of-type {
+        background-color: gray;
+    }
+    align-items: center;
+    border: 1px solid #98FF98;
+    border-left: none; 
+    color: #98FF98;
+    display: flex;
+    font-size: 20px;
+    height: 50px;
+    margin: 25px 0;
+    padding-left: 2rem;
+    background-color: navy;
+}
+
+.padding-left {
+    padding-left: 1rem;
+}
+
+.viz {
+    height: 200px;
+    background-color: transparent;
+    width: 100%;
+}
+
+.legend {
+    border: 1px solid #98FF98;
+    color: white;
+    background-color: black;
+    font-size: 20px;
+    padding: 20px;
+    position: fixed;
+    right: 50px;
+    top: 10px;
+    span {
+        border: 1px solid #98FF98;
+        display: block;
+        padding: 20px;
+        &.was {
+            background-color: navy;
+        }        
+        &.wasnt {
+            background-color: gray;
+            margin-bottom: 20px;
+        }
+    }
+
+}
