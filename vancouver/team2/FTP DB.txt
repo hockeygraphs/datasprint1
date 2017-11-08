@@ -1,0 +1,11 @@
+dev.hkstats.com
+dev.hkstats.com/cpanel
+IP:  71.19.240.8
+u: devhkstats
+p: dc9308SF0vkf3gf3GH
+
+database (phpmyadmin via cpanel):
+DB: localhost
+db:  devhksta_dev
+user: devhksta_user
+pass: dc9308SF0vkf3gf3GH
